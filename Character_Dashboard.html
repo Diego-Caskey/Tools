@@ -771,14 +771,14 @@
 
     // proficiencies
     if(s.profs && s.profs.length){
-      html += '<div class="span-6"><div class="card"><h3 class="card-title">Proficiencies</h3><div class="chips">';
+      html += '<div class="span-12"><div class="card"><h3 class="card-title">Proficiencies</h3><div class="chips">';
       s.profs.forEach(function(p){ html += '<span class="chip">'+esc(p.name)+'<b>+'+p.bonus+'</b></span>'; });
       html += '</div></div></div>';
     }
 
     // equipment
     if(s.equipment && s.equipment.length){
-      html += '<div class="span-6"><div class="card"><h3 class="card-title">Equipment</h3>';
+      html += '<div class="span-12"><div class="card"><h3 class="card-title">Equipment</h3>';
       s.equipment.forEach(function(e, i){
         html += '<div class="entry eq"><span class="eqicon">'+eqIcon(i)+'</span>'+
           '<div class="e-body"><div class="e-name">'+esc(e.name)+'</div>'+
@@ -789,7 +789,7 @@
 
     // traits
     if(s.traits && s.traits.length){
-      html += '<div class="span-6"><div class="card"><h3 class="card-title">Traits</h3>';
+      html += '<div class="span-12"><div class="card"><h3 class="card-title">Traits</h3>';
       s.traits.forEach(function(t){
         html += '<div class="entry"><div class="e-name">'+esc(t.name)+'</div>'+
           (t.eff?'<div class="e-eff">'+esc(t.eff)+'</div>':'')+'</div>';
@@ -799,7 +799,7 @@
 
     // unique actions
     if(s.actions && s.actions.length){
-      html += '<div class="span-6"><div class="card"><h3 class="card-title">Unique Actions</h3>';
+      html += '<div class="span-12"><div class="card"><h3 class="card-title">Unique Actions</h3>';
       s.actions.forEach(function(t){
         html += '<div class="entry"><div class="e-name">'+esc(t.name)+'</div>'+
           (t.eff?'<div class="e-eff">'+esc(t.eff)+'</div>':'')+'</div>';
@@ -809,7 +809,7 @@
 
     // inventory
     if(s.inventory && s.inventory.length){
-      html += '<div class="span-6"><div class="card"><h3 class="card-title">Inventory</h3><div class="chips">';
+      html += '<div class="span-12"><div class="card"><h3 class="card-title">Inventory</h3><div class="chips">';
       s.inventory.forEach(function(it){ html += '<span class="chip">'+esc(it)+'</span>'; });
       html += '</div></div></div>';
     }

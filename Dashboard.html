@@ -1,0 +1,996 @@
+<!--
+  Campaign Codex — a presentation layer for the Claude D&D system.
+  Paste a /SHEET or /STATUS response and it parses the fixed formats
+  into a living visual dashboard. No game logic, no AI: pure parse + render.
+-->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@500;600&display=swap" rel="stylesheet" />
+
+<style>
+  :root{
+    /* Tome-and-ledger palette — dark bound leather, gilt, verdigris, ember */
+    --ink:        #14121c;
+    --ink-2:      #1b1826;
+    --surface:    #221e30;
+    --surface-2:  #2a2538;
+    --edge:       #3a3350;
+    --edge-soft:  #2f2a40;
+    --vellum:     #ece4d2;
+    --vellum-dim: #b6ac96;
+    --muted:      #8d8470;
+    --gilt:       #c9a24b;
+    --gilt-soft:  #9c7e3c;
+    --patina:     #7fb09a;
+    --ember:      #c8623f;
+    --blood:      #b8423f;
+    --good:       #7fb09a;
+    --bad:        #c8623f;
+    --radius:     14px;
+    --radius-sm:  9px;
+  }
+
+  *{ box-sizing:border-box; }
+
+  body{
+    margin:0;
+    background:
+      radial-gradient(120% 80% at 50% -10%, #211c30 0%, var(--ink) 55%) fixed;
+    color:var(--vellum);
+    font-family:"Inter", system-ui, sans-serif;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .wrap{ max-width:1080px; margin:0 auto; padding:28px 20px 64px; }
+
+  /* ---------- Intake bar ---------- */
+  .intake{
+    background:linear-gradient(180deg,var(--ink-2),var(--surface));
+    border:1px solid var(--edge-soft);
+    border-radius:var(--radius);
+    padding:16px;
+    margin-bottom:26px;
+  }
+  .intake-head{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    margin-bottom:12px;
+  }
+  .codex-mark{
+    font-family:"Spectral", serif; font-weight:700; font-size:21px;
+    letter-spacing:.3px; color:var(--vellum);
+  }
+  .codex-mark .gilt{ color:var(--gilt); }
+  .codex-sub{ color:var(--muted); font-size:12.5px; margin-left:auto; }
+
+  textarea{
+    width:100%; min-height:108px; resize:vertical;
+    background:var(--ink); color:var(--vellum);
+    border:1px solid var(--edge); border-radius:var(--radius-sm);
+    padding:12px 14px; font-family:"Spline Sans Mono", ui-monospace, monospace;
+    font-size:12.5px; line-height:1.55;
+  }
+  textarea::placeholder{ color:var(--muted); }
+  textarea:focus-visible{ outline:2px solid var(--gilt); outline-offset:1px; }
+
+  .row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; align-items:center; }
+  button{
+    font-family:"Inter",sans-serif; font-weight:600; font-size:13px;
+    border-radius:var(--radius-sm); padding:9px 16px; cursor:pointer;
+    border:1px solid var(--edge); background:var(--surface-2); color:var(--vellum);
+    transition:transform .08s ease, border-color .15s ease, background .15s ease;
+  }
+  button:hover{ border-color:var(--gilt-soft); }
+  button:active{ transform:translateY(1px); }
+  button:focus-visible{ outline:2px solid var(--gilt); outline-offset:2px; }
+  button.primary{
+    position:relative;
+    background:linear-gradient(180deg,var(--gilt),var(--gilt-soft));
+    color:#221a08; border-color:var(--gilt-soft);
+    transition:transform .08s ease, color .3s ease, background .3s ease, border-color .3s ease;
+  }
+  button.primary:hover{ background:#221a08; color:var(--gilt); border-color:var(--gilt); }
+  .btn-label{ position:relative; z-index:1; }
+  .btn-ring{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+  .btn-ring-rect{
+    fill:none; stroke:var(--gilt); stroke-width:2; stroke-linecap:round;
+    vector-effect:non-scaling-stroke;
+    stroke-dasharray:100; stroke-dashoffset:100;
+    transition:none;
+  }
+  button.primary:hover .btn-ring-rect{ stroke-dashoffset:0; transition:stroke-dashoffset .7s cubic-bezier(.4,0,.2,1); }
+  button.ghost{ background:transparent; }
+  .icon-btn{ width:38px; height:38px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:var(--vellum-dim); }
+  .icon-btn svg{ width:17px; height:17px; }
+  .icon-btn:hover{ color:var(--ember); border-color:var(--ember); }
+  .feed{ color:var(--muted); font-size:12px; margin-left:4px; }
+  .feed.ok{ color:var(--patina); }
+  .feed.warn{ color:var(--ember); }
+
+  /* ---------- save slots ---------- */
+  .slots{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:26px; }
+  @media (max-width:560px){ .slots{ grid-template-columns:1fr; } }
+  .slot{
+    background:linear-gradient(180deg,var(--ink-2),var(--surface));
+    border:1px solid var(--edge-soft); border-radius:var(--radius);
+    padding:12px 13px; display:flex; flex-direction:column; gap:10px;
+    cursor:pointer; transition:border-color .18s ease, box-shadow .18s ease;
+  }
+  .slot.active{ border-color:var(--gilt); box-shadow:inset 0 0 14px rgba(201,162,75,.1); }
+  .slot:hover{ border-color:var(--gilt); box-shadow:0 0 0 1px var(--gilt-soft); }
+  .slot-top{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .slot-name{ font-family:"Spectral",serif; font-weight:600; font-size:15px; color:var(--vellum); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .slot:not(.filled) .slot-name{ color:var(--muted); font-style:italic; font-weight:500; }
+  .slot-tag{ font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); flex:none; }
+  .slot-btns{ display:flex; gap:7px; }
+  .slot-btns button{ flex:1; padding:6px 0; font-size:12px; }
+  .slot-save:hover{ background:#4f9d63; color:#fff; border-color:#4f9d63; }
+  .slot-clear:hover:not(:disabled){ background:#c2493a; color:#fff; border-color:#c2493a; }
+  .slot-clear:disabled{ opacity:.38; cursor:default; border-color:var(--edge-soft); }
+  .slot.active .slot-tag{ color:var(--gilt); }
+
+  /* ---------- Empty state ---------- */
+  .empty{
+    text-align:center; padding:70px 24px; color:var(--vellum-dim);
+  }
+  .empty h2{ font-family:"Spectral",serif; font-weight:600; color:var(--vellum); margin:0 0 8px; font-size:24px;}
+  .empty p{ max-width:440px; margin:0 auto; font-size:14px; }
+  .empty code{ color:var(--gilt); font-family:"Spline Sans Mono",monospace; }
+  .empty .load-example{ margin-top:22px; }
+
+  /* ---------- Header band ---------- */
+  .band{
+    display:flex; align-items:flex-end; gap:18px; flex-wrap:wrap;
+    border-bottom:1px solid var(--edge-soft); padding-bottom:18px; margin-bottom:22px;
+  }
+  .name-block{ flex:1; min-width:200px; }
+  .eyebrow{
+    font-size:11px; letter-spacing:2.5px; text-transform:uppercase;
+    color:var(--muted); margin-bottom:4px;
+  }
+  .char-name{
+    font-family:"Spectral",serif; font-weight:700; font-size:clamp(28px,5vw,42px);
+    line-height:1.04; color:var(--vellum); margin:0;
+  }
+  .level-badge{
+    position:relative;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    width:78px; height:78px; border-radius:50%;
+    background:radial-gradient(circle at 50% 35%, var(--surface-2), var(--ink-2));
+    box-shadow:inset 0 0 18px rgba(201,162,75,.12);
+  }
+  .lv-ring{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .lv-ring circle{ fill:none; stroke-width:4; }
+  .lv-ring-bg{ stroke:var(--edge); }
+  .lv-ring-fg{ stroke:var(--gilt); stroke-linecap:round; transform:rotate(-90deg); transform-origin:50% 50%; transform-box:fill-box; transition:stroke-dasharray .5s ease; }
+  .level-badge .lv{ font-size:10px; letter-spacing:2px; color:var(--gilt); text-transform:uppercase; }
+  .level-badge .num{ font-family:"Spline Sans Mono",monospace; font-weight:600; font-size:30px; color:var(--vellum); line-height:1; }
+
+  .mood-chip{
+    display:inline-flex; align-items:center; gap:7px;
+    padding:6px 13px; border-radius:999px; font-size:12.5px; font-weight:600;
+    border:1px solid var(--edge);
+  }
+  .mood-chip .dot{ width:8px; height:8px; border-radius:50%; }
+  .mood-good{ color:var(--good); border-color:rgba(127,176,154,.4); }
+  .mood-good .dot{ background:var(--good); box-shadow:0 0 8px var(--good); }
+  .mood-bad{ color:var(--bad); border-color:rgba(200,98,63,.45); }
+  .mood-bad .dot{ background:var(--bad); box-shadow:0 0 8px var(--bad); }
+  .mood-neutral{ color:var(--vellum-dim); }
+  .mood-neutral .dot{ background:var(--vellum-dim); }
+
+  /* ---------- Grid scaffolding ---------- */
+  .grid{ display:grid; grid-template-columns:repeat(12,1fr); gap:14px; }
+  .span-12{ grid-column:span 12; }
+  .span-8{ grid-column:span 8; }
+  .span-6{ grid-column:span 6; }
+  .span-4{ grid-column:span 4; }
+  @media (max-width:760px){
+    .span-8,.span-6,.span-4{ grid-column:span 12; }
+  }
+
+  @media (max-width:560px){
+    .wrap{ padding:18px 13px 48px; }
+    .card{ padding:14px 14px; }
+    .band{ gap:14px; }
+    .vitals{ gap:8px; }
+    .vital{ padding:11px 10px; }
+    .vital .lab{ font-size:9.5px; }
+    .vital .val{ font-size:18px; gap:5px; }
+    .vital .val small{ font-size:11px; }
+    .vicon{ width:15px; height:15px; }
+    .abilities{ gap:8px; }
+    .ability{ padding:10px 4px 9px; }
+    .ability .score{ font-size:23px; }
+    .moodhp{ max-width:none; gap:10px; }
+    .prog-top{ gap:16px; }
+    .idcard .val{ font-size:18px; }
+  }
+
+  @media (max-width:400px){
+    .vital .val{ font-size:16px; gap:4px; }
+    .vital .val small{ font-size:10.5px; }
+    .vicon{ width:13px; height:13px; }
+    .abilities{ grid-template-columns:repeat(3,1fr); }
+  }
+
+  .card{
+    background:linear-gradient(180deg,var(--surface),var(--ink-2));
+    border:1px solid var(--edge-soft); border-radius:var(--radius);
+    padding:16px 17px;
+  }
+  .card-title{
+    font-family:"Spectral",serif; font-weight:600; font-size:13px;
+    letter-spacing:1.5px; text-transform:uppercase; color:var(--gilt);
+    margin:0 0 13px; display:flex; align-items:center; gap:9px;
+  }
+  .card-title::after{ content:""; flex:1; height:1px; background:var(--edge-soft); }
+
+  /* ---------- Vitals ---------- */
+  .vitals{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+
+  /* identity badges — two equal cards meeting in the middle */
+  .idrow{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:480px){ .idrow{ grid-template-columns:1fr; } }
+  .idcard{
+    text-align:center; padding:15px 14px;
+    background:radial-gradient(circle at 50% 0%, var(--surface-2), var(--ink-2));
+    border:1px solid var(--edge-soft); border-radius:var(--radius);
+  }
+  .idcard .lab{ font-size:10.5px; letter-spacing:2px; text-transform:uppercase; color:var(--gilt); }
+  .idcard .val{ font-family:"Spectral",serif; font-weight:600; font-size:21px; color:var(--vellum); margin-top:4px; }
+
+  .prog-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px 28px; }
+  .prog-grid .track{ margin-bottom:0; }
+
+  /* progression top row: level dashes (left) + death circles (right) */
+  .prog-top{ display:flex; gap:18px 28px; flex-wrap:wrap; margin-bottom:18px; }
+  .prog-cell{ flex:1 1 200px; }
+  .prog-cell-right{ text-align:right; }
+  .ach-row{ display:flex; gap:11px; margin-top:9px; align-items:center; }
+  .prog-cell-right .ach-row{ justify-content:flex-end; }
+
+  /* level achievements — gold horizontal dashes */
+  /* level achievements — gold diamonds (≈ same footprint as the death circles) */
+  .ldiamond{ width:13px; height:13px; transform:rotate(45deg); border-radius:3px; background:var(--ink); border:1.5px solid var(--edge); display:inline-block; transition:background .3s ease, border-color .3s ease; }
+  .ldiamond.on{ background:linear-gradient(135deg,var(--gilt),var(--gilt-soft)); border-color:var(--gilt); box-shadow:0 0 8px rgba(201,162,75,.35); }
+
+  /* death saves — original circular pips */
+  .dcirc{ width:18px; height:18px; border-radius:50%; background:var(--ink); border:1.5px solid var(--edge); display:inline-block; transition:background .3s ease, border-color .3s ease, opacity .3s ease; }
+  .dcirc.on{ background:radial-gradient(circle,var(--ember),#7e3120); border-color:var(--ember); box-shadow:0 0 9px rgba(200,98,63,.4); }
+  .dcirc.spent{ opacity:.5; }
+
+  /* ability / proficiency — gold vertical dashes (wrap as they multiply) */
+  .vdash-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .vdash{ width:6px; height:20px; border-radius:3px; background:var(--ink); border:1.5px solid var(--edge); display:inline-block; transition:background .3s ease, border-color .3s ease; }
+  .vdash.on{ background:linear-gradient(180deg,var(--gilt),var(--gilt-soft)); border-color:var(--gilt); box-shadow:0 0 7px rgba(201,162,75,.3); }
+  .vital{
+    background:var(--ink-2); border:1px solid var(--edge-soft);
+    border-radius:var(--radius-sm); padding:13px 14px;
+  }
+  .vital .lab{ font-size:10.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); }
+  .vital .val{ display:flex; align-items:center; gap:7px; white-space:nowrap; font-family:"Spline Sans Mono",monospace; font-weight:600; font-size:23px; color:var(--vellum); margin-top:3px; }
+  .vital .val small{ font-size:13px; color:var(--vellum-dim); font-weight:500; }
+  .vicon{ flex:none; width:17px; height:17px; display:inline-flex; }
+  .vicon svg{ width:100%; height:100%; display:block; }
+  .hpbar{ height:7px; border-radius:99px; background:var(--ink); margin-top:9px; overflow:hidden; border:1px solid var(--edge-soft); }
+  .hpbar > span{ display:block; height:100%; border-radius:99px; transition:width .5s ease, background .4s ease; }
+  .moodhp{ display:flex; align-items:center; gap:12px; margin-top:15px; max-width:400px; }
+  .mood-face{ flex:none; width:27px; height:27px; display:inline-flex; transition:color .4s ease; }
+  .mood-face svg{ width:100%; height:100%; display:block; }
+  .hpbar.lg{ flex:1; height:11px; margin-top:0; }
+
+  /* ---------- Abilities ---------- */
+  .abilities{ display:grid; grid-template-columns:repeat(6,1fr); gap:11px; }
+  @media (max-width:620px){ .abilities{ grid-template-columns:repeat(3,1fr);} }
+  .ability{
+    text-align:center; padding:12px 6px 11px;
+    background:radial-gradient(circle at 50% 0%, var(--surface-2), var(--ink-2));
+    border:1px solid var(--edge-soft); border-radius:var(--radius-sm);
+    position:relative;
+  }
+  .ability .ab{ font-size:11px; letter-spacing:1.5px; color:var(--gilt); font-weight:600; }
+  .ability .score{ font-family:"Spline Sans Mono",monospace; font-weight:600; font-size:27px; color:var(--vellum); line-height:1.1; }
+  .ability .mod{
+    display:inline-block; margin-top:3px; font-family:"Spline Sans Mono",monospace;
+    font-size:12.5px; padding:1px 9px; border-radius:99px;
+    background:var(--ink); border:1px solid var(--edge-soft); color:var(--vellum-dim);
+  }
+  .ability .mod.pos{ color:var(--patina); }
+  .ability .mod.neg{ color:var(--ember); }
+
+  /* ---------- Rule-of-three pip meters (the signature motif) ---------- */
+  .track{ margin-bottom:14px; }
+  .track:last-child{ margin-bottom:0; }
+  .track-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:7px; }
+  .track-head .t{ font-size:12.5px; color:var(--vellum); font-weight:500; }
+  .track-head .t em{ color:var(--muted); font-style:normal; font-size:11.5px; }
+  .track-head .c{ font-family:"Spline Sans Mono",monospace; font-size:12px; color:var(--muted); }
+  .pips{ display:flex; gap:7px; }
+  .pip{
+    width:0; height:0; flex:1; aspect-ratio:1/1; max-width:22px;
+    transform:rotate(45deg); border-radius:3px;
+    background:var(--ink); border:1.5px solid var(--edge);
+    transition:background .3s ease, box-shadow .3s ease;
+  }
+  .pip.on{ background:linear-gradient(135deg,var(--gilt),var(--gilt-soft)); border-color:var(--gilt); box-shadow:0 0 10px rgba(201,162,75,.35); }
+  .pip.death{ border-radius:50%; transform:none; }
+  .pip.death.on{ background:radial-gradient(circle,var(--ember),#7e3120); border-color:var(--ember); box-shadow:0 0 10px rgba(200,98,63,.4); }
+  .pip.death.spent{ background:var(--ink); border-color:var(--edge); opacity:.5; }
+
+  /* ---------- Chips & lists ---------- */
+  .chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{
+    font-size:12.5px; padding:5px 12px; border-radius:99px;
+    background:var(--ink-2); border:1px solid var(--edge-soft); color:var(--vellum-dim);
+  }
+  .chip b{ color:var(--gilt); font-family:"Spline Sans Mono",monospace; font-weight:600; margin-left:3px; }
+
+  .entry{ padding:11px 0; border-bottom:1px solid var(--edge-soft); }
+  .entry.eq{ display:flex; align-items:center; gap:13px; }
+  .eqicon{ flex:none; width:24px; height:38px; display:flex; align-items:center; justify-content:center; }
+  .eqicon svg{ width:100%; height:100%; display:block; }
+  .entry.eq .e-body{ flex:1; min-width:0; }
+  .entry:first-child{ padding-top:0; }
+  .entry:last-child{ border-bottom:none; padding-bottom:0; }
+  .entry .e-name{ font-weight:600; color:var(--vellum); font-size:13.5px; }
+  .entry .e-eff{ color:var(--vellum-dim); font-size:12.5px; margin-top:2px; }
+
+  .kv{ display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--edge-soft); align-items:baseline; }
+  .kv:last-child{ border-bottom:none; }
+  .kv .k{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); min-width:78px; }
+  .kv .v{ color:var(--vellum); font-size:13.5px; flex:1; }
+
+  .events li{ font-size:13px; color:var(--vellum-dim); margin-bottom:5px; }
+  .events{ margin:0; padding-left:18px; }
+
+  .objective{
+    background:linear-gradient(180deg,rgba(201,162,75,.07),transparent);
+    border:1px solid var(--gilt-soft); border-radius:var(--radius-sm);
+    padding:12px 14px; margin-top:2px;
+  }
+  .objective .lab{ font-size:10.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--gilt); }
+  .objective .txt{ font-family:"Spectral",serif; font-size:15px; color:var(--vellum); margin-top:3px; }
+
+  .placeholder-text{ color:var(--muted); font-size:13px; font-style:italic; }
+
+  @media (prefers-reduced-motion:reduce){ *{ transition:none !important; } }
+</style>
+
+<div class="wrap">
+
+  <div class="intake">
+    <div class="intake-head">
+      <span class="codex-mark">Character <span class="gilt">Dashboard</span></span>
+      <span class="codex-sub">Paste a <b>/SHEET</b> or <b>/STATUS</b> response below</span>
+    </div>
+    <textarea id="input" placeholder="Paste the formatted character sheet or status update Claude gave you, then press Render. Sheet and status data merge into one living view."></textarea>
+    <div class="row">
+      <button class="primary" id="render" type="button"><span class="btn-label">Render</span><svg class="btn-ring" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path class="btn-ring-rect" d="M50 1.5 H9.5 A8 8 0 0 0 1.5 9.5 V30.5 A8 8 0 0 0 9.5 38.5 H90.5 A8 8 0 0 0 98.5 30.5 V9.5 A8 8 0 0 0 90.5 1.5 H50" pathLength="100"/></svg></button>
+      <span class="feed" id="feed"></span>
+    </div>
+  </div>
+
+  <div class="slots" id="slots">
+    <div class="slot" data-slot="0">
+      <div class="slot-top"><span class="slot-name">Empty</span><span class="slot-tag">Slot 1</span></div>
+      <div class="slot-btns"><button class="slot-save">Save</button><button class="slot-clear">Clear</button></div>
+    </div>
+    <div class="slot" data-slot="1">
+      <div class="slot-top"><span class="slot-name">Empty</span><span class="slot-tag">Slot 2</span></div>
+      <div class="slot-btns"><button class="slot-save">Save</button><button class="slot-clear">Clear</button></div>
+    </div>
+    <div class="slot" data-slot="2">
+      <div class="slot-top"><span class="slot-name">Empty</span><span class="slot-tag">Slot 3</span></div>
+      <div class="slot-btns"><button class="slot-save">Save</button><button class="slot-clear">Clear</button></div>
+    </div>
+  </div>
+
+  <div id="stage">
+    <div class="empty">
+      <h2>Your codex awaits its first entry.</h2>
+      <p>Run <code>/SHEET</code> or <code>/STATUS</code> in your session, paste the reply above, and watch it bloom into cards, meters, and tracks.</p>
+      <button class="ghost load-example" type="button">Load Example</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- persistence (artifact storage, graceful fallback) ----------
+  var KEY = "campaign-codex-v2";
+  var mem = null;
+  function copy(o){ return o ? JSON.parse(JSON.stringify(o)) : o; }
+  async function persist(){
+    var payload = { current: state, slots: slots };
+    mem = payload;
+    try{ if(window.storage){ await window.storage.set(KEY, JSON.stringify(payload), false); } }catch(e){}
+  }
+  async function restore(){
+    try{ if(window.storage){ var r = await window.storage.get(KEY, false); if(r && r.value) return JSON.parse(r.value); } }catch(e){}
+    return mem;
+  }
+
+  // ---------- text helpers ----------
+  function clean(t){ return (t||"").replace(/\*\*/g,"").replace(/__/g,"").replace(/`/g,"").trim(); }
+  function lines(t){ return clean(t).split(/\r?\n/); }
+
+  var HEADERS = ["proficiencies","traits","unique actions","equipment","inventory",
+    "progression","recent events","notable items","notable effects","active effects",
+    "recent changes","items for sale","current objective","objective"];
+  function isHeader(line){
+    var l = line.replace(/[:*\-\s]+$/,"").trim().toLowerCase();
+    return HEADERS.indexOf(l) !== -1;
+  }
+
+  // grab the block of lines that follow a header until the next known header/blank-gap
+  function block(raw, label){
+    var ls = lines(raw), out = [];
+    var re = new RegExp("^[\\-\\*\\s]*"+label+"\\s*:\\s*(.*)$","i");
+    for(var i=0;i<ls.length;i++){
+      var m = ls[i].trim().match(re);
+      if(!m) continue;
+      var inlineVal = clean(m[1]).replace(/^[\-\*]\s*/,"").trim();   // value on the same line as the label
+      if(inlineVal) out.push(inlineVal);
+      for(var k=i+1;k<ls.length;k++){
+        var line = ls[k].replace(/^[\-\*]\s*/,"").trim();
+        if(line === ""){ if(out.length) break; else continue; }
+        if(isHeader(line)) break;
+        out.push(line);
+      }
+      return out;
+    }
+    return out;
+  }
+
+  // ---- header descriptor parsing (race / class) ----
+  var RACE_LIST = ['Half-Elf','Half Elf','Half-Orc','Half Orc','Hill Dwarf','Mountain Dwarf',
+    'Wood Elf','High Elf','Dark Elf','Deep Gnome','Forest Gnome','Rock Gnome','Human','Elf',
+    'Halfling','Dwarf','Gnome','Tiefling','Dragonborn','Orc','Goblin','Aasimar','Genasi',
+    'Tabaxi','Firbolg','Goliath','Kenku','Lizardfolk','Triton','Yuan-Ti','Warforged',
+    'Changeling','Kobold','Bugbear','Hobgoblin','Minotaur','Centaur','Satyr','Fairy',
+    'Harengon','Owlin','Tortle','Githyanki','Githzerai','Drow','Revenant','Vampire','Undead'];
+  var RACE_RE  = new RegExp('\\b('+RACE_LIST.join('|')+')\\b','i');
+  var ALIGN_RE = /\b(lawful|neutral|chaotic|good|evil|unaligned)\b/i;
+
+  function tc(s){ return (s||'').toLowerCase().replace(/\b[a-z]/g,function(c){return c.toUpperCase();}); }
+  function capFirst(s){ s=(s||'').trim(); return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+
+  // From a descriptor like "Level 1 Human Necromancer" or "Wandering Alchemist (Human, Chaotic Good)"
+  function headerMeta(desc){
+    var out = {race:null, cls:null};
+    if(!desc) return out;
+    var d = desc.replace(/[:：]\s*$/,''), paren = [];        // drop trailing colon from "Race Class:"
+    var pm = d.match(/\(([^)]*)\)/);
+    if(pm){ paren = pm[1].split(/[,;\/]/).map(function(x){return x.trim();}).filter(Boolean); d = d.replace(/\([^)]*\)/g,' '); }
+    d = d.replace(/\blevel\s*\d+\b/ig,' ').trim();              // drop "Level X"
+    var rm = d.match(RACE_RE);
+    if(rm){ out.race = tc(rm[1]); d = d.replace(RACE_RE,' '); } // race sitting in the descriptor body
+    else {                                                      // otherwise look in the parenthetical
+      for(var a=0;a<paren.length;a++){ if(ALIGN_RE.test(paren[a])) continue; var prm=paren[a].match(RACE_RE); if(prm){ out.race=tc(prm[1]); break; } }
+      if(!out.race){ for(var b=0;b<paren.length;b++){ if(!ALIGN_RE.test(paren[b])){ out.race=tc(paren[b]); break; } } }
+    }
+    var cls = d.replace(/\s{2,}/g,' ').replace(/^[\s,:\-–—]+|[\s,:\-–—]+$/g,'').trim();  // whatever remains is the class
+    if(cls) out.cls = /[a-z]/.test(cls) ? cls : tc(cls);
+    return out;
+  }
+
+  // "Label: value" — value may sit on the next line if blank after the colon
+  function inline(raw, labels){
+    var ls = lines(raw);
+    for(var j=0;j<labels.length;j++){
+      var re = new RegExp("^[\\-\\*\\s]*"+labels[j]+"\\s*:\\s*(.*)$","i");
+      for(var i=0;i<ls.length;i++){
+        var m = ls[i].match(re);
+        if(m){
+          var v = clean(m[1]);
+          if(v) return v.replace(/[,]+$/,"");
+          for(var k=i+1;k<ls.length;k++){ var nx=clean(ls[k]); if(nx) return nx.replace(/[,]+$/,""); }
+        }
+      }
+    }
+    return null;
+  }
+  function num(raw, labels){ var v = inline(raw, labels); if(v===null) return null; var m=v.match(/-?\d+/); return m?parseInt(m[0],10):null; }
+
+  // ---------- parsing ----------
+  function parse(raw, prev){
+    var s = prev || {};
+    s.abilities = s.abilities || {};
+
+    var isStatus = /status update/i.test(raw);
+    var isSheet  = /\b(STR|DEX|CON|INT|WIS|CHA)\s*:/i.test(raw) || (/level\s*:/i.test(raw) && /proficiencies/i.test(raw));
+
+    // name: first meaningful line that isn't a status banner / field
+    if(isSheet){
+      var ls = lines(raw);
+      for(var i=0;i<ls.length;i++){
+        var c = clean(ls[i]);
+        if(!c) continue;
+        if(/^[=\-*~_\s]+$/.test(c)) continue;                    // separator rule (===, ---, etc.)
+        if(/character sheet|status update/i.test(c)) continue;   // banner labels
+        if(/^(level|hp|str|dex|con|int|wis|cha)\s*[:]/i.test(c)) break; // reached fields, no name line
+        c = c.replace(/^[=~\s]+|[=~\s]+$/g,"");                   // trim any wrapping === / ~~~
+        var nameRaw = c, desc = "";
+        var dash = c.split(/\s[-–—]\s/);
+        if(dash.length > 1){ nameRaw = dash[0]; desc = dash.slice(1).join(" — "); }
+        else { var lp = c.indexOf("("); if(lp > 0){ nameRaw = c.slice(0,lp); desc = c.slice(lp); } }
+        s.name = nameRaw.replace(/[:,]\s*$/,"").trim();
+        var meta = headerMeta(desc);
+        if(meta.race) s.race = meta.race;
+        if(meta.cls)  s.cls  = meta.cls;
+        break;
+      }
+    }
+
+    var lvl = num(raw, ["level"]); if(lvl!==null) s.level = lvl;
+
+    var hp = clean(raw).match(/HP\s*:\s*(\d+)\s*\/\s*(\d+)/i);
+    if(hp){ s.hp = parseInt(hp[1],10); s.hpMax = parseInt(hp[2],10); }
+
+    var coin = num(raw, ["coin"]); if(coin!==null) s.coin = coin;
+    var rations = inline(raw, ["rations"]); if(rations!==null){ var rmn = rations.match(/\d+/); s.rations = rmn ? rmn[0] : rations; }
+    var day = clean(raw).match(/day\s*\[?\s*(\d+)/i); if(day) s.day = parseInt(day[1],10);
+
+    // abilities
+    ["STR","DEX","CON","INT","WIS","CHA"].forEach(function(ab){
+      var m = clean(raw).match(new RegExp(ab+"\\s*:\\s*(\\d+)\\s*\\(\\s*([+\\-]?\\d+)\\s*\\)","i"));
+      if(m) s.abilities[ab] = { score:parseInt(m[1],10), mod:parseInt(m[2],10) };
+    });
+
+    // proficiencies — "Name +X, Other +Y"
+    var pb = block(raw,"Proficiencies").join(", ");
+    if(pb){
+      var profs=[], pm, pre=/([A-Za-z][A-Za-z \-']*?)\s*\+\s*(\d+)/g;
+      while((pm=pre.exec(pb))!==null){ profs.push({name:pm[1].trim(), bonus:parseInt(pm[2],10)}); }
+      if(profs.length) s.profs = profs;
+    }
+
+    function entries(label){
+      return block(raw,label).map(function(l){
+        var m = l.match(/^(.*?)\s*\((.*)\)\s*$/);
+        return m ? {name:m[1].trim(), eff:m[2].trim()} : {name:l.trim(), eff:""};
+      }).filter(function(e){ return e.name; });
+    }
+    var tr = entries("Traits"); if(tr.length) s.traits = tr;
+    var ua = entries("Unique Actions"); if(ua.length) s.actions = ua;
+    var eq = entries("Equipment"); if(eq.length) s.equipment = eq;
+
+    var invRaw = block(raw,"Inventory").join(", ");
+    if(invRaw){
+      var items = invRaw.split(",").map(function(x){return x.trim();}).filter(Boolean);
+      var kept = [];
+      items.forEach(function(it){
+        var cm = it.match(/^(\d+)\s*coins?\b/i);
+        if(cm && s.coin == null){ s.coin = parseInt(cm[1],10); return; }          // "10 coin" -> Coin card
+        var rm = it.match(/^(\d+)\s*(days?\s+)?rations?\b/i);
+        if(rm && s.rations == null){ s.rations = rm[1]; return; }       // "1 day rations" -> "1"
+        kept.push(capFirst(it));
+      });
+      if(kept.length) s.inventory = kept; else if(!s.inventory) s.inventory = [];
+    }
+
+    // progression tracks
+    var prog = clean(raw);
+    var lx = prog.match(/level\s*xp\s*=\s*\[?\s*(\d+)\s*\/\s*(\d+)/i)
+          || prog.match(/level progress\s*[:=]\s*\[?\s*(\d+)\s*\/\s*(\d+)/i);
+    if(lx) s.levelXP = {have:+lx[1], need:+lx[2]};
+
+    if(/xp\s*=/i.test(prog) || /progression/i.test(prog)){
+      var ABBR = {STR:"Strength",DEX:"Dexterity",CON:"Constitution",INT:"Intelligence",WIS:"Wisdom",CHA:"Charisma"};
+      var abil = [], seenA = {}, mm;
+
+      // form: "INT XP = 0/3" / "Wisdom XP = 2/3"  (ability named directly)
+      var reAbCode = /(?:^|[\n,])[\s\-\*•]*(STR|DEX|CON|INT|WIS|CHA|Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s*xp\s*=\s*\[?\s*(\d+)\s*\/\s*(\d+)/ig;
+      while((mm = reAbCode.exec(prog)) !== null){
+        var code = mm[1].toUpperCase();
+        var nm = ABBR[code] || ABBR[code.slice(0,3)] || tc(mm[1]);
+        if(seenA[nm]) continue; seenA[nm] = 1;
+        abil.push({name:nm, have:+mm[2], need:+mm[3]});
+      }
+      // form: "Ability XP = Dexterity [1/3]"
+      var reAbLbl = /ability\s*xp\s*=\s*([A-Za-z][A-Za-z '\-]*?)\s*\[?\s*(\d+)\s*\/\s*(\d+)/ig;
+      while((mm = reAbLbl.exec(prog)) !== null){
+        if(/^none/i.test(mm[1])) continue;
+        var full = ABBR[mm[1].trim().toUpperCase()] || mm[1].trim();
+        if(seenA[full]) continue; seenA[full] = 1;
+        abil.push({name:full, have:+mm[2], need:+mm[3]});
+      }
+      s.abilityXP = abil;
+
+      var prof = [], seenP = {};
+      var reProf = /proficiency\s*xp\s*=\s*([A-Za-z][A-Za-z '\-]*?)\s*\[?\s*(\d+)\s*\/\s*(\d+)/ig;
+      while((mm = reProf.exec(prog)) !== null){
+        if(/^none/i.test(mm[1])) continue;
+        var pn = mm[1].trim();
+        if(seenP[pn]) continue; seenP[pn] = 1;
+        prof.push({name:pn, have:+mm[2], need:+mm[3]});
+      }
+      s.profXP = prof;
+    }
+
+    var ds = prog.match(/death\s*saves?\s*[=:]\s*\[?\s*(\d+)\s*\/\s*(\d+)/i);
+    if(ds) s.death = {have:+ds[1], need:+ds[2]};
+
+    // world / status fields
+    var loc = inline(raw,["current location","location"]); if(loc) s.location = loc;
+    var tod = inline(raw,["time of day","time"]); if(tod) s.time = tod;
+    var mood = inline(raw,["mood"]); if(mood) s.mood = mood;
+    var eff  = inline(raw,["notable effects","active effects"]); if(eff) s.effects = eff;
+    var obj  = inline(raw,["objective","current objective"]); if(obj) s.objective = obj;
+
+    var ev = block(raw,"Recent Events");
+    if(ev.length) s.events = ev.map(function(x){ return x.replace(/^[\-\*•]\s*/,"").trim(); });
+
+    return s;
+  }
+
+  // ---------- rendering ----------
+  function esc(t){ return (t==null?"":String(t)).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
+
+  // minimalist inline icons
+  var ICON = {
+    heart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#b8423f"/></svg>',
+    coin:  '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="#c9a24b" stroke="#9c7e3c" stroke-width="1.5"/><circle cx="12" cy="12" r="5.4" fill="none" stroke="#8a6e30" stroke-width="1.1" opacity=".55"/></svg>',
+    leg:   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 13.5 6.3 18.2" fill="none" stroke="#f2ece0" stroke-width="3.2" stroke-linecap="round"/><circle cx="5.3" cy="18.1" r="2.1" fill="#f2ece0"/><circle cx="6.9" cy="19.7" r="2.1" fill="#f2ece0"/><ellipse cx="15" cy="9" rx="7.2" ry="6.3" transform="rotate(-32 15 9)" fill="#8a5a36"/></svg>',
+    sword: '<svg viewBox="0 0 24 24" aria-hidden="true"><g transform="rotate(-40 12 12)" fill="#9aa0ab"><path d="M12 2.4c.7 0 1.2.5 1.5 1.2L15 9c.3 1.3-.2 2.7-1.3 3.5h-3.4C9.2 11.7 8.7 10.3 9 9l1.5-5.4c.3-.7.8-1.2 1.5-1.2z"/><rect x="6.7" y="12" width="10.6" height="2.7" rx="1.35"/><rect x="10.8" y="14.4" width="2.4" height="6" rx="1.2"/><circle cx="12" cy="20.8" r="1.7"/></g></svg>',
+    armor: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6c2-1 3.6-.5 4.6.8.7.8 1.5 1.2 2.4 1.2s1.7-.4 2.4-1.2C15.4 5.5 17 5 19 6c.6 3 .4 5.1-.2 7.1-.9 3-3 6.3-6.8 8.4-3.8-2.1-5.9-5.4-6.8-8.4C4.6 11.1 4.4 9 5 6z" fill="#9aa0ab"/></svg>',
+    pouch: '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="#9aa0ab"><path d="M8.2 8C8 5 9 3.6 10.4 4.1c.9.3 1 .8 1.6.8s.7-.5 1.6-.8C16 3.6 16 5 15.8 8z"/><path d="M9 9.2C6.5 9.4 4.8 12 4.3 15c-.5 3 .3 5.8 3.7 6.6 1.8.4 6.2.4 8 0 3.4-.8 4.2-3.6 3.7-6.6-.5-3-2.2-5.6-4.7-5.8-2-.2-4-.2-6 0z"/></g><g fill="none" stroke="#9aa0ab" stroke-width="1.5" stroke-linecap="round"><path d="M15.6 8.4C18.4 7.8 21 9.2 22.4 11.4"/><path d="M15.9 9.9C18.8 9.6 21.2 11.4 21.8 13.4"/></g></svg>'
+  };
+  // first entry = weapon, second = armor, rest = additional equipment
+  function eqIcon(i){ return i===0 ? ICON.sword : i===1 ? ICON.armor : ICON.pouch; }
+
+  function pips(have, total, death){
+    var out="";
+    for(var i=0;i<total;i++){
+      if(death){
+        var spent = i >= have;
+        out += '<span class="pip death '+(spent?"spent":"on")+'"></span>';
+      } else {
+        out += '<span class="pip '+(i<have?"on":"")+'"></span>';
+      }
+    }
+    return out;
+  }
+
+  function track(label, sub, t){
+    if(!t) return "";
+    return '<div class="track"><div class="track-head"><span class="t">'+esc(label)+
+      (sub?' <em>'+esc(sub)+'</em>':'')+'</span><span class="c">'+t.have+' / '+t.need+
+      '</span></div><div class="pips">'+pips(t.have,t.need,false)+'</div></div>';
+  }
+
+  // level achievements — gold square diamonds (sized to match the death circles)
+  function hdashRow(have, need){ var o=""; for(var i=0;i<need;i++){ o+='<span class="ldiamond'+(i<have?" on":"")+'"></span>'; } return o; }
+  // death saves — original style circular pips (ember = remaining, hollow = spent)
+  function dcircRow(have, need){ var o=""; for(var i=0;i<need;i++){ o+='<span class="dcirc'+(i<have?" on":" spent")+'"></span>'; } return o; }
+  // ability / proficiency tracks — gold vertical dashes (compact as their number grows)
+  function trackVDash(label, sub, t){
+    if(!t) return "";
+    var p = "";
+    for(var i=0;i<t.need;i++){ p += '<span class="vdash'+(i<t.have?" on":"")+'"></span>'; }
+    return '<div class="track"><div class="track-head"><span class="t">'+esc(label)+
+      (sub?' <em>'+esc(sub)+'</em>':'')+'</span><span class="c">'+t.have+' / '+t.need+
+      '</span></div><div class="vdash-row">'+p+'</div></div>';
+  }
+
+  function moodClass(m){
+    if(!m) return "mood-neutral";
+    m = m.toLowerCase();
+    if(/good/.test(m)) return "mood-good";
+    if(/bad/.test(m)) return "mood-bad";
+    return "mood-neutral";
+  }
+  function hpColor(r){ return r>0.5 ? "#6fb069" : r>0.25 ? "#d8b24a" : "#c2503f"; } // green / yellow / red
+
+  // mood drives the face color: good=yellow, bad=blue, neutral=grey
+  function moodColor(mood){
+    var m = (mood||'').toLowerCase();
+    if(/good|happy/.test(m)) return "#d8b24a";
+    if(/bad|sad/.test(m))    return "#5b8fc9";
+    return "#9aa0ab";
+  }
+
+  // mood face — just eyes + a mouth curve, inherits color via currentColor
+  function faceFor(mood){
+    var m = (mood||'').toLowerCase();
+    var eyes = '<circle cx="8.5" cy="9.5" r="1.5" fill="currentColor"/><circle cx="15.5" cy="9.5" r="1.5" fill="currentColor"/>';
+    var mouth;
+    if(/good|happy/.test(m))      mouth = '<path d="M7.3 14 Q12 18.8 16.7 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+    else if(/bad|sad/.test(m))    mouth = '<path d="M7.3 17 Q12 12.2 16.7 17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+    else                          mouth = '<path d="M8 15.5 H16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+    return '<svg viewBox="0 0 24 24" aria-hidden="true">'+eyes+mouth+'</svg>';
+  }
+
+  function render(s){
+    if(!s || (!s.name && !s.hp && !Object.keys(s.abilities||{}).length && !s.location)){
+      return '<div class="empty"><h2>Nothing to show yet.</h2><p>Paste a sheet or status update above, or load the example.</p><button class="ghost load-example" type="button">Load Example</button></div>';
+    }
+    var html = "";
+
+    // band
+    var moodhp = '';
+    if(s.hp!=null && s.hpMax){
+      var hr = Math.max(0, Math.min(1, s.hp/s.hpMax));
+      var hc = hpColor(hr);
+      moodhp = '<div class="moodhp">'+
+        '<div class="hpbar lg"><span style="width:'+(hr*100)+'%;background:'+hc+'"></span></div>'+
+        '<span class="mood-face" style="color:'+moodColor(s.mood)+'" title="'+esc(s.mood||"Neutral")+'">'+faceFor(s.mood)+'</span>'+
+        '</div>';
+    }
+    html += '<div class="band"><div class="name-block">'+
+      '<div class="eyebrow">Adventurer of record</div>'+
+      '<h1 class="char-name">'+esc(s.name||"Unnamed Wanderer")+'</h1>'+
+      moodhp +
+      '</div>';
+    if(s.level!=null){
+      var af = s.levelXP ? Math.max(0, Math.min(1, s.levelXP.have / s.levelXP.need)) : 0;
+      html += '<div class="level-badge">'+
+        '<svg class="lv-ring" viewBox="0 0 100 100" aria-hidden="true">'+
+        '<circle class="lv-ring-bg" cx="50" cy="50" r="46"/>'+
+        '<circle class="lv-ring-fg" cx="50" cy="50" r="46" pathLength="100" style="stroke-dasharray:'+(af*100)+' 100"/>'+
+        '</svg>'+
+        '<span class="lv">Level</span><span class="num">'+esc(s.level)+'</span></div>';
+    }
+    html += '</div>';
+
+    html += '<div class="grid">';
+
+    // identity — race & class, derived from the sheet header
+    if(s.race || s.cls){
+      html += '<div class="span-12"><div class="idrow">'+
+        '<div class="idcard"><div class="lab">Race</div><div class="val">'+esc(s.race||"—")+'</div></div>'+
+        '<div class="idcard"><div class="lab">Class</div><div class="val">'+esc(s.cls||"—")+'</div></div>'+
+        '</div></div>';
+    }
+
+    // vitals
+    html += '<div class="span-12"><div class="vitals">';
+    if(s.hp!=null && s.hpMax!=null){
+      html += '<div class="vital"><div class="lab">Health</div><div class="val"><span class="vicon">'+ICON.heart+
+        '</span><span>'+s.hp+' <small>/ '+s.hpMax+'</small></span></div></div>';
+    }
+    if(s.coin!=null) html += '<div class="vital"><div class="lab">Coin</div><div class="val"><span class="vicon">'+ICON.coin+'</span><span>'+esc(s.coin)+'</span></div></div>';
+    if(s.rations!=null) html += '<div class="vital"><div class="lab">Rations</div><div class="val"><span class="vicon">'+ICON.leg+'</span><span>'+esc(s.rations)+'</span></div></div>';
+    html += '</div></div>';
+
+    // abilities
+    if(s.abilities && Object.keys(s.abilities).length){
+      html += '<div class="span-12"><div class="card"><h3 class="card-title">Abilities</h3><div class="abilities">';
+      ["STR","DEX","CON","INT","WIS","CHA"].forEach(function(ab){
+        var a = s.abilities[ab];
+        if(!a){ return; }
+        var cls = a.mod>0?"pos":a.mod<0?"neg":"";
+        var sign = a.mod>0?"+":"";
+        html += '<div class="ability"><div class="ab">'+ab+'</div><div class="score">'+a.score+
+          '</div><div class="mod '+cls+'">'+sign+a.mod+'</div></div>';
+      });
+      html += '</div></div></div>';
+    }
+
+    // proficiencies
+    if(s.profs && s.profs.length){
+      html += '<div class="span-6"><div class="card"><h3 class="card-title">Proficiencies</h3><div class="chips">';
+      s.profs.forEach(function(p){ html += '<span class="chip">'+esc(p.name)+'<b>+'+p.bonus+'</b></span>'; });
+      html += '</div></div></div>';
+    }
+
+    // equipment
+    if(s.equipment && s.equipment.length){
+      html += '<div class="span-6"><div class="card"><h3 class="card-title">Equipment</h3>';
+      s.equipment.forEach(function(e, i){
+        html += '<div class="entry eq"><span class="eqicon">'+eqIcon(i)+'</span>'+
+          '<div class="e-body"><div class="e-name">'+esc(e.name)+'</div>'+
+          (e.eff?'<div class="e-eff">'+esc(e.eff)+'</div>':'')+'</div></div>';
+      });
+      html += '</div></div>';
+    }
+
+    // traits
+    if(s.traits && s.traits.length){
+      html += '<div class="span-6"><div class="card"><h3 class="card-title">Traits</h3>';
+      s.traits.forEach(function(t){
+        html += '<div class="entry"><div class="e-name">'+esc(t.name)+'</div>'+
+          (t.eff?'<div class="e-eff">'+esc(t.eff)+'</div>':'')+'</div>';
+      });
+      html += '</div></div>';
+    }
+
+    // unique actions
+    if(s.actions && s.actions.length){
+      html += '<div class="span-6"><div class="card"><h3 class="card-title">Unique Actions</h3>';
+      s.actions.forEach(function(t){
+        html += '<div class="entry"><div class="e-name">'+esc(t.name)+'</div>'+
+          (t.eff?'<div class="e-eff">'+esc(t.eff)+'</div>':'')+'</div>';
+      });
+      html += '</div></div>';
+    }
+
+    // inventory
+    if(s.inventory && s.inventory.length){
+      html += '<div class="span-6"><div class="card"><h3 class="card-title">Inventory</h3><div class="chips">';
+      s.inventory.forEach(function(it){ html += '<span class="chip">'+esc(it)+'</span>'; });
+      html += '</div></div></div>';
+    }
+
+    // field report — always visible once a character exists
+    html += '<div class="span-12"><div class="card"><h3 class="card-title">Field Report</h3>';
+    html += '<div class="objective"><div class="lab">Objective</div><div class="txt">'+
+      (s.objective ? esc(s.objective) : '<span class="placeholder-text">No objective recorded yet</span>')+'</div></div>';
+    html += '<div style="margin-top:14px">';
+    [['Location',s.location],['Time',s.time],['Effects',s.effects]].forEach(function(p){
+      html += '<div class="kv"><span class="k">'+p[0]+'</span><span class="v">'+
+        (p[1] ? esc(p[1]) : '<span class="placeholder-text">—</span>')+'</span></div>';
+    });
+    html += '</div>';
+    html += '<div style="margin-top:14px"><div class="card-title" style="font-size:12px">Recent Events</div>';
+    if(s.events && s.events.length){
+      html += '<ul class="events">';
+      s.events.forEach(function(e){ html += '<li>'+esc(e)+'</li>'; });
+      html += '</ul>';
+    } else {
+      html += '<div class="placeholder-text">No recent events recorded yet</div>';
+    }
+    html += '</div>';
+    html += '</div></div>';
+
+    // progression — full width, anchored to the bottom
+    var abilityList = s.abilityXP || [];
+    var profList = s.profXP || [];
+    var hasProg = s.levelXP || abilityList.length || profList.length || s.death;
+    if(hasProg){
+      html += '<div class="span-12"><div class="card"><h3 class="card-title">Progression</h3>';
+
+      // top row: death saves (left-most) + level achievements
+      html += '<div class="prog-top">';
+      html += '<div class="prog-cell">';
+      if(s.death){
+        html += '<div class="track-head"><span class="t">Death Saves <em>remaining</em></span><span class="c">'+
+          s.death.have+' / '+s.death.need+'</span></div><div class="ach-row">'+dcircRow(s.death.have,s.death.need)+'</div>';
+      }
+      html += '</div>';
+      html += '<div class="prog-cell">';
+      if(s.levelXP){
+        html += '<div class="track-head"><span class="t">Level <em>achievements</em></span><span class="c">'+
+          s.levelXP.have+' / '+s.levelXP.need+'</span></div><div class="ach-row">'+hdashRow(s.levelXP.have,s.levelXP.need)+'</div>';
+      }
+      html += '</div>';
+      html += '</div>';
+
+      // ability + proficiency tracks (gold vertical dashes)
+      if(abilityList.length || profList.length){
+        html += '<div class="prog-grid">';
+        abilityList.forEach(function(x){ html += trackVDash(x.name, "ability", x); });
+        profList.forEach(function(x){ html += trackVDash(x.name, "proficiency", x); });
+        html += '</div>';
+      }
+
+      html += '</div></div>';
+    }
+
+    html += '</div>';
+    return html;
+  }
+
+  // ---------- wiring ----------
+  var stage = document.getElementById("stage");
+  var input = document.getElementById("input");
+  var feed  = document.getElementById("feed");
+  var state = null;
+  var slots = [null, null, null];
+  var activeSlot = null;
+
+  function setFeed(msg, kind){ feed.textContent = msg || ""; feed.className = "feed" + (kind?(" "+kind):""); }
+  function draw(){ stage.innerHTML = render(state); }
+  function hasChar(s){ return !!(s && (s.name || s.hp!=null || (s.abilities && Object.keys(s.abilities).length))); }
+
+  function renderSlots(){
+    var els = document.querySelectorAll(".slot");
+    for(var n=0;n<els.length;n++){
+      var el = els[n], i = +el.getAttribute("data-slot"), data = slots[i];
+      el.querySelector(".slot-name").textContent = data ? (data.name || "Unnamed") : "Empty";
+      el.classList.toggle("filled", !!data);
+      el.classList.toggle("active", activeSlot===i);
+      var clr = el.querySelector(".slot-clear"); if(clr) clr.disabled = !data;
+    }
+  }
+
+  document.getElementById("render").addEventListener("click", function(){
+    var raw = input.value;
+    if(!raw.trim()){ setFeed("Paste a sheet or status first.", "warn"); return; }
+    try{
+      state = parse(raw, state || {abilities:{}});
+      if(activeSlot !== null) slots[activeSlot] = copy(state);   // keep the loaded slot in sync
+      draw(); renderSlots(); persist();
+      setFeed("Updated. Each paste refines this character.", "ok");
+      input.value = "";
+    }catch(e){
+      setFeed("Could not read that — check the formatting.", "warn");
+    }
+  });
+
+  function loadExample(){
+    state = parse(EXAMPLE, {abilities:{}});
+    if(activeSlot !== null) slots[activeSlot] = copy(state);
+    draw(); renderSlots(); persist();
+    setFeed("Example loaded.", "ok");
+  }
+
+  // Load Example lives inside the empty state, which is re-rendered — delegate the click
+  document.getElementById("stage").addEventListener("click", function(ev){
+    if(ev.target.closest(".load-example")) loadExample();
+  });
+
+  document.getElementById("slots").addEventListener("click", function(ev){
+    var slotEl = ev.target.closest(".slot"); if(!slotEl) return;
+    var i = +slotEl.getAttribute("data-slot");
+    var btn = ev.target.closest("button");
+    if(btn){
+      if(btn.classList.contains("slot-save")){
+        if(!hasChar(state)){ setFeed("Nothing to save yet — paste a sheet first.", "warn"); return; }
+        slots[i] = copy(state); activeSlot = i;
+        renderSlots(); persist(); setFeed("Saved to Slot "+(i+1)+".", "ok");
+      } else if(btn.classList.contains("slot-clear")){
+        if(!slots[i]) return;
+        slots[i] = null; if(activeSlot===i){ state = {abilities:{}}; draw(); }
+        renderSlots(); persist(); setFeed("Slot "+(i+1)+" cleared.", "");
+      }
+      return;   // a button was clicked — don't also load
+    }
+    // clicked the card body
+    if(!slots[i]){
+      // switch to this empty slot — blank working view
+      state = {abilities:{}}; activeSlot = i;
+      draw(); renderSlots(); persist(); setFeed("Slot "+(i+1)+" selected — paste a sheet to fill it.", "");
+      return;
+    }
+    state = copy(slots[i]); activeSlot = i;
+    draw(); renderSlots(); persist(); setFeed("Loaded Slot "+(i+1)+".", "ok");
+  });
+
+  var EXAMPLE = [
+"===",
+"Lyria Brightmix - Human Alchemist:",
+"Level: 1 HP: 40/40",
+"STR: 8 (-1) DEX: 12 (+1) CON: 14 (+2)",
+"INT: 12 (+1) WIS: 10 (+0) CHA: 12 (+1)",
+"Proficiencies: Medicine +2, Sleight of Hand +2",
+"Traits:",
+"",
+"* Exposure Therapy (Half fire/acid damage from resistance built through countless failed experiments)",
+"* Trial & Error (When retrying a failed Medicine check, gain +1 for each past failed attempt in that encounter)",
+"Unique Actions:",
+"",
+"* Secret Pocket (Dig blindly into the bag for a forgotten item; usefulness = 1d20. Holds up to 3 items at a time, long rest replenishes 1)",
+"Equipment:",
+"",
+"* Traveler's Knife (1d4 piercing)",
+"* Favorite Overalls (AC: 10)",
+"* Tracker's Bracers (Quick access to prepared items)",
+"* Comically Large Backpack (High storage capacity, cumbersome in tight situations)",
+"Inventory:",
+"10 coin, 1 ration",
+"Progression:",
+"",
+"* Level XP = 2/3 Achievements",
+"* DEX XP = 1/3",
+"* CON XP = 2/3",
+"* Proficiency XP = Medicine [2/3]",
+"* Death Saves = 2/3 Remaining"
+  ].join("\n");
+
+  // boot
+  (async function(){
+    var data = await restore();
+    if(data){ slots = data.slots || [null,null,null]; state = data.current || null; }
+    if(state){ draw(); setFeed("Restored your codex.", "ok"); }
+    renderSlots();
+  })();
+
+})();
+</script>

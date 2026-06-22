@@ -398,16 +398,19 @@
 (function(){
   "use strict";
 
-  // ---------- persistence (artifact storage, graceful fallback) ----------
+  // ---------- persistence (browser localStorage, with graceful fallbacks) ----------
   var KEY = "campaign-codex-v2";
   var mem = null;
   function copy(o){ return o ? JSON.parse(JSON.stringify(o)) : o; }
   async function persist(){
     var payload = { current: state, slots: slots };
     mem = payload;
-    try{ if(window.storage){ await window.storage.set(KEY, JSON.stringify(payload), false); } }catch(e){}
+    var json = JSON.stringify(payload);
+    try{ localStorage.setItem(KEY, json); }catch(e){}                      // saved in the user's browser
+    try{ if(window.storage){ await window.storage.set(KEY, json, false); } }catch(e){}  // fallback for the in-app preview
   }
   async function restore(){
+    try{ var v = localStorage.getItem(KEY); if(v) return JSON.parse(v); }catch(e){}
     try{ if(window.storage){ var r = await window.storage.get(KEY, false); if(r && r.value) return JSON.parse(r.value); } }catch(e){}
     return mem;
   }
